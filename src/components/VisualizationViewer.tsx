@@ -1,9 +1,17 @@
 // src/components/VisualizationViewer.tsx
 import { marked } from 'marked';
 import { useRef, useMemo } from 'react';
+import type { Timeline } from '../types/timeline';
+
+interface TracerState {
+    title: string;
+    type: 'unknown' | 'Array2D' | 'Array1D' | 'Log';
+    data: { val: number | string; bg: string }[][];
+    log: string[];
+}
 
 interface VisualizationViewerProps {
-    commands: any[][];
+    commands: Timeline;
     step: number;
     activeFile?: { name: string; language: string; content: string };
 }
@@ -13,7 +21,7 @@ export default function VisualizationViewer({ commands, step, activeFile }: Visu
     const weights = useRef([1, 1, 1]); 
 
     const tracers = useMemo(() => {
-        const state: Record<string, any> = {};
+        const state: Record<string, TracerState> = {};
         const visibleChunks = commands.slice(0, step);
 
         visibleChunks.forEach(chunk => {
@@ -29,24 +37,32 @@ export default function VisualizationViewer({ commands, step, activeFile }: Visu
                     const tracer = state[cmd.key];
                     if (!tracer) return;
 
-                    if (Array.isArray(cmd.args[0]) && Array.isArray(cmd.args[0][0])) {
+                    const firstArg = cmd.args?.[0];
+                    const isCellValue = (val: unknown): val is number | string =>
+                        typeof val === 'number' || typeof val === 'string';
+
+                    if (Array.isArray(firstArg) && Array.isArray(firstArg[0])) {
                         tracer.type = 'Array2D';
-                        tracer.data = cmd.args[0].map((row: any[]) => row.map((val: any) => ({ val, bg: '' })));
-                    } else if (Array.isArray(cmd.args[0])) {
+                        tracer.data = (firstArg as unknown[][])
+                            .map((row) => row.filter(isCellValue).map((val) => ({ val, bg: '' })));
+                    } else if (Array.isArray(firstArg)) {
                         tracer.type = 'Array1D';
-                        tracer.data = [cmd.args[0].map((val: any) => ({ val, bg: '' }))];
+                        tracer.data = [firstArg.filter(isCellValue).map((val) => ({ val, bg: '' }))];
                     }
                 } 
                 else if (cmd.method === 'select') {
-                    const [row, col] = cmd.args;
+                    const [row, col] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof col !== 'number') return;
                     if (state[cmd.key]?.data?.[row]?.[col]) state[cmd.key].data[row][col].bg = '#2962ff';
                 }
                 else if (cmd.method === 'deselect') {
-                    const [row, col] = cmd.args;
+                    const [row, col] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof col !== 'number') return;
                     if (state[cmd.key]?.data?.[row]?.[col]) state[cmd.key].data[row][col].bg = '';
                 }
                 else if (cmd.method === 'selectRow') {
-                    const [row, startCol, endCol] = cmd.args;
+                    const [row, startCol, endCol] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof startCol !== 'number' || typeof endCol !== 'number') return;
                     const tracer = state[cmd.key];
                     if (tracer?.data?.[row]) {
                         for (let c = startCol; c <= endCol; c++) {
@@ -55,7 +71,8 @@ export default function VisualizationViewer({ commands, step, activeFile }: Visu
                     }
                 } 
                 else if (cmd.method === 'deselectRow') {
-                    const [row, startCol, endCol] = cmd.args;
+                    const [row, startCol, endCol] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof startCol !== 'number' || typeof endCol !== 'number') return;
                     const tracer = state[cmd.key];
                     if (tracer?.data?.[row]) {
                         for (let c = startCol; c <= endCol; c++) {
@@ -64,14 +81,16 @@ export default function VisualizationViewer({ commands, step, activeFile }: Visu
                     }
                 }
                 else if (cmd.method === 'patch') {
-                    const [row, col, val] = cmd.args;
+                    const [row, col, val] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof col !== 'number') return;
                     if (state[cmd.key]?.data?.[row]?.[col]) {
                         state[cmd.key].data[row][col].bg = '#c51162';
-                        if (val !== undefined) state[cmd.key].data[row][col].val = val;
+                        if (val !== undefined) state[cmd.key].data[row][col].val = String(val);
                     }
                 } 
                 else if (cmd.method === 'depatch') {
-                    const [row, col] = cmd.args;
+                    const [row, col] = cmd.args ?? [];
+                    if (typeof row !== 'number' || typeof col !== 'number') return;
                     if (state[cmd.key]?.data?.[row]?.[col]) state[cmd.key].data[row][col].bg = '';
                 }
                 else if (cmd.method === 'println') {
@@ -79,7 +98,7 @@ export default function VisualizationViewer({ commands, step, activeFile }: Visu
                     if (!tracer) return;
 
                     tracer.type = 'Log';
-                    tracer.log.push(cmd.args[0]);
+                    tracer.log.push(String(cmd.args?.[0]));
                 }
             });
         });

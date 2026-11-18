@@ -1,5 +1,14 @@
 // src/workers/executor.worker.ts
 
+interface WorkerCommand {
+    key: string | null;
+    method: string;
+    args: unknown[];
+}
+
+// The command queue lives on the worker's global scope so it can be reset per run
+const workerScope = self as unknown as { commandQueue: WorkerCommand[] };
+
 // 1. We create a universal Mock Tracer to intercept all method calls
 class MockTracer {
     key: string;
@@ -7,7 +16,7 @@ class MockTracer {
     constructor(key: string) {
         this.key = key;
         // The legacy app records the instantiation of tracers
-        (self as any).commandQueue.push({ key: this.key, method: 'construct', args: [] });
+        workerScope.commandQueue.push({ key: this.key, method: 'construct', args: [] });
     }
 
     // We use a Proxy to dynamically catch ANY method called on a tracer 
@@ -16,11 +25,11 @@ class MockTracer {
         const tracer = new MockTracer(key);
         return new Proxy(tracer, {
             get(target, propKey: string) {
-                if (propKey in target) return (target as any)[propKey];
+                if (propKey in target) return target[propKey as keyof MockTracer];
                 
                 // If it's a dynamic method call, record it to the timeline
-                return (...args: any[]) => {
-                    (self as any).commandQueue.push({ 
+                return (...args: unknown[]) => {
+                    workerScope.commandQueue.push({ 
                         key: target.key, 
                         method: propKey, 
                         args 
@@ -38,10 +47,10 @@ const AlgorithmVisualizerMock = {
     ChartTracer: function(key: string) { return MockTracer.createProxy(key); },
     GraphTracer: function(key: string) { return MockTracer.createProxy(key); },
     LogTracer: function(key: string) { return MockTracer.createProxy(key); },
-    Layout: { setRoot: (...args: any[]) => { (self as any).commandQueue.push({ key: null, method: 'setRoot', args }); } },
-    VerticalLayout: function(...args: any[]) { return { isLayout: true, args }; },
-    HorizontalLayout: function(...args: any[]) { return { isLayout: true, args }; },
-    Tracer: { delay: () => { (self as any).commandQueue.push({ key: null, method: 'delay', args: [] }); } }
+    Layout: { setRoot: (...args: unknown[]) => { workerScope.commandQueue.push({ key: null, method: 'setRoot', args }); } },
+    VerticalLayout: function(...args: unknown[]) { return { isLayout: true, args }; },
+    HorizontalLayout: function(...args: unknown[]) { return { isLayout: true, args }; },
+    Tracer: { delay: () => { workerScope.commandQueue.push({ key: null, method: 'delay', args: [] }); } }
 };
 
 // 3. We intercept the 'require' statement in the user's code
@@ -57,7 +66,7 @@ self.onmessage = function (e: MessageEvent) {
     const { code } = e.data;
     
     // Reset the global command queue for this run
-    (self as any).commandQueue = [];
+    workerScope.commandQueue = [];
 
     try {
         // Evaluate the user's code in a restricted Function scope, injecting our custom 'require'
@@ -69,12 +78,12 @@ self.onmessage = function (e: MessageEvent) {
         // Post the recorded timeline payload back to the React UI
         self.postMessage({ 
             success: true, 
-            commands: (self as any).commandQueue 
+            commands: workerScope.commandQueue 
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         self.postMessage({ 
             success: false, 
-            error: error.message || 'Execution failed' 
+            error: error instanceof Error ? error.message : 'Execution failed' 
         });
     }
 };

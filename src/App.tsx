@@ -1,16 +1,17 @@
 // src/App.tsx
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import SupportModal from './components/SupportModal';
 import Header from './components/Header';
 import Navigator from './components/Navigator';
 import VisualizationViewer from './components/VisualizationViewer';
 import CodeEditor from './components/CodeEditor';
+import type { Timeline } from './types/timeline';
 
 export default function App() {
     const gridRef = useRef<HTMLDivElement>(null);
     const weights = useRef([20, 40, 40]); 
     
-    const [commands, setCommands] = useState<any[][]>([]);
+    const [commands, setCommands] = useState<Timeline>([]);
     const [step, setStep] = useState<number>(1);
 
     // Initial files state managed in App so Navigator can update it
@@ -73,10 +74,12 @@ export default function App() {
         setContributors(newContributors);
     };
 
-    const handleMouseDown = (index: number) => (e: React.MouseEvent) => {
+    // useCallback marks these as event handlers, so react-hooks/refs allows the
+    // weights.current read inside them.
+    const handleMouseDown = useCallback((index: number) => (e: React.MouseEvent) => {
         e.preventDefault();
         const startX = e.clientX;
-        const startWeights = [...weights.current];
+        const startWeights: number[] = weights.current;
         const gridWidth = gridRef.current?.offsetWidth || 1;
         const totalWeight = startWeights.reduce((a, b) => a + b, 0);
 
@@ -110,7 +113,12 @@ export default function App() {
 
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-    };
+    }, []);
+
+    // Defined outside the render return: react-hooks/refs treats callbacks created
+    // inline in the returned JSX as potentially running during render.
+    const onResizeStart0 = handleMouseDown(0);
+    const onResizeStart1 = handleMouseDown(1);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#393939', color: '#bbbbbb', fontFamily: 'Roboto, sans-serif', fontSize: '12px' }}>
@@ -122,7 +130,7 @@ export default function App() {
                 <Navigator onSelectAlgorithm={handleSelectAlgorithm} />
                 
                 <div style={{ position: 'relative', backgroundColor: '#505050' }}>
-                    <div onMouseDown={handleMouseDown(0)} style={{ position: 'absolute', top: 0, bottom: 0, left: '-4px', right: '-4px', cursor: 'col-resize', zIndex: 50 }} />
+                    <div onMouseDown={onResizeStart0} style={{ position: 'absolute', top: 0, bottom: 0, left: '-4px', right: '-4px', cursor: 'col-resize', zIndex: 50 }} />
                 </div>
                 
                 <VisualizationViewer 
@@ -132,7 +140,7 @@ export default function App() {
                 />
                 
                 <div style={{ position: 'relative', backgroundColor: '#505050' }}>
-                    <div onMouseDown={handleMouseDown(1)} style={{ position: 'absolute', top: 0, bottom: 0, left: '-4px', right: '-4px', cursor: 'col-resize', zIndex: 50 }} />
+                    <div onMouseDown={onResizeStart1} style={{ position: 'absolute', top: 0, bottom: 0, left: '-4px', right: '-4px', cursor: 'col-resize', zIndex: 50 }} />
                 </div>
                 
                 <CodeEditor 

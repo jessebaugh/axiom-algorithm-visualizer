@@ -3,7 +3,7 @@
 export interface TraceCommand {
     action: 'alloc' | 'set' | 'swap' | 'select' | 'deselect';
     target: string;
-    args: any[];
+    args: unknown[];
 }
 
 export abstract class BaseTracer {
@@ -14,7 +14,7 @@ export abstract class BaseTracer {
         this.key = key;
     }
 
-    protected pushCommand(action: TraceCommand['action'], args: any[] = []) {
+    protected pushCommand(action: TraceCommand['action'], args: unknown[] = []) {
         this.commandQueue.push({
             action,
             target: this.key,

@@ -1,7 +1,9 @@
 // src/components/CodeEditor.tsx
 import { useState, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import ExecutorWorker from '../workers/executor.worker?worker';
+import type { Timeline, TimelineCommand } from '../types/timeline';
 
 type FileState = { id: string; name: string; language: string; content: string };
 
@@ -11,10 +13,10 @@ interface CodeEditorProps {
     activeFileId: string;
     onActiveFileChange: (id: string) => void;
     onFilesChange: React.Dispatch<React.SetStateAction<Record<string, FileState>>>;
-    commands: any[][];
+    commands: Timeline;
     step: number;
     onStepChange: (step: number) => void;
-    onBuildComplete: (commands: any[][]) => void;
+    onBuildComplete: (commands: Timeline) => void;
 }
 
 export default function CodeEditor({ 
@@ -28,7 +30,7 @@ export default function CodeEditor({
     onStepChange, 
     onBuildComplete 
 }: CodeEditorProps) {
-    const editorRef = useRef<any>(null);
+    const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
     
     const [isPlaying, setIsPlaying] = useState(false);
     const [speed, setSpeed] = useState(2); 
@@ -38,13 +40,13 @@ export default function CodeEditor({
 
     useEffect(() => {
         let interval: ReturnType<typeof setTimeout>;
+        // Stop automatically once the last step is reached; deriving this instead of
+        // calling setIsPlaying here avoids a cascading render on every effect run.
         if (isPlaying && step < commands.length) {
             const delayMs = 1000 / speed; 
             interval = setTimeout(() => {
-                onStepChange(step + 1);
+                onStepChange(Math.min(step + 1, commands.length));
             }, delayMs);
-        } else if (step >= commands.length) {
-            setIsPlaying(false);
         }
         return () => clearTimeout(interval);
     }, [isPlaying, step, commands.length, speed, onStepChange]);
@@ -55,7 +57,7 @@ export default function CodeEditor({
         };
     }, []);
 
-    const handleEditorDidMount = (editor: any) => {
+    const handleEditorDidMount = (editor: MonacoEditor.IStandaloneCodeEditor) => {
         editorRef.current = editor;
     };
 
@@ -106,11 +108,11 @@ export default function CodeEditor({
         
         worker.onmessage = (e) => {
             if (e.data.success) {
-                const rawCommands = e.data.commands;
-                const chunks: any[][] = [];
-                let currentChunk: any[] = [];
+                const rawCommands = e.data.commands as TimelineCommand[];
+                const chunks: Timeline = [];
+                let currentChunk: TimelineCommand[] = [];
                 
-                rawCommands.forEach((cmd: any) => {
+                rawCommands.forEach((cmd) => {
                     if (cmd.method === 'delay') {
                         chunks.push(currentChunk);
                         currentChunk = [];
